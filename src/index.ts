@@ -29,32 +29,8 @@ app.use(compression());
 //   origin: process.env.CORS_ORIGIN || '*',
 //   credentials: true
 // }));
-const getAllowedOrigins = () => {
-  if (process.env.CORS_ORIGIN) {
-    return process.env.CORS_ORIGIN.split(',').map(origin => origin.trim());
-  }
-  if (process.env.NODE_ENV === 'production') {
-    return ['*'];
-  }
-  return ['http://localhost:3000'];
-};
 app.use(cors({
-  origin: (origin, callback) => {
-    const allowedOrigins = getAllowedOrigins();
-    if (!origin) {
-      return callback(null, true);
-    }
-    if (allowedOrigins.includes('*')) {
-      return callback(null, true);
-    }
-    if (allowedOrigins.includes(origin)) {
-      return callback(null, true);
-    }
-    if (process.env.NODE_ENV === 'production' && origin.includes('vercel.app')) {
-      return callback(null, true);
-    }
-    callback(new Error('Not allowed by CORS'));
-  },
+  origin: true,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
