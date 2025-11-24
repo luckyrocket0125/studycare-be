@@ -30,11 +30,13 @@ app.use(compression());
 //   credentials: true
 // }));
 app.use(cors({
-  origin: true,
+  origin: "https://studycare-fe.vercel.app",
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
 }));
+app.options("*", cors());
+
 
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true, limit: '10mb' }));
