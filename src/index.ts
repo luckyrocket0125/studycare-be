@@ -29,15 +29,27 @@ app.use(compression());
 //   origin: process.env.CORS_ORIGIN || '*',
 //   credentials: true
 // }));
-app.use(cors());
-app.use(cors({
-  origin: ["*"],
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Origin']
-}));
+// app.use(cors());
+// app.use(cors({
+//   origin: ["*"],
+//   credentials: true,
+//   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
+//   allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Access-Control-Allow-Headers', 'Access-Control-Allow-Origin']
+// }));
 
-app.options("*", cors());
+const corsOptions = {
+  origin: '*', // Allow all origins
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS', 'HEAD'],
+  allowedHeaders: '*', // Allow all headers
+  exposedHeaders: '*', // Expose all headers
+  maxAge: 86400, // Cache preflight for 24 hours
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
+app.options('*', cors(corsOptions));
+
+// app.options("*", cors());
 
 
 app.use(express.json({ limit: '10mb' }));
