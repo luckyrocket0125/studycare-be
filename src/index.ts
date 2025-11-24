@@ -26,7 +26,8 @@ const PORT = process.env.PORT || 5000;
 app.use(helmet());
 app.use(compression());
 app.use(cors({
-  origin: process.env.CORS_ORIGIN || '*',
+  // origin: process.env.CORS_ORIGIN || '*',
+  origin: true,
   credentials: true
 }));
 
