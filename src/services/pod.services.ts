@@ -251,7 +251,14 @@ export class PodService {
         user_id: userId,
         role: 'member',
       })
-      .select()
+      .select(`
+        *,
+        users:user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .single();
 
     if (memberError || !member) {
@@ -264,7 +271,18 @@ export class PodService {
       .update({ status: 'accepted', updated_at: new Date().toISOString() })
       .eq('id', invitationId);
 
-    return member;
+    return {
+      id: member.id,
+      pod_id: member.pod_id,
+      user_id: member.user_id,
+      role: member.role,
+      joined_at: member.joined_at,
+      user: member.users ? {
+        id: member.users.id,
+        email: member.users.email,
+        full_name: member.users.full_name,
+      } : undefined,
+    };
   }
 
   async declineInvitation(invitationId: string, userId: string): Promise<void> {
@@ -457,9 +475,9 @@ export class PodService {
       .select('*', { count: 'exact', head: true })
       .eq('pod_id', podId);
 
-    // Only fetch members list if user is a member (for privacy)
+    // Fetch members list if user is creator or member (for privacy)
     let members: any[] = [];
-    if (membership) {
+    if (isCreator || membership) {
       const { data: membersData, error: membersError } = await supabase
         .from('study_pod_members')
         .select(`
