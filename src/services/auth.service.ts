@@ -106,7 +106,7 @@ export class AuthService {
     });
 
     if (authError || !authData.session) {
-      throw createError('Invalid email or password', 401);
+      throw createError('Invalid email or password' + authError, 401);
     }
 
     const { data: user, error: userError } = await supabase
