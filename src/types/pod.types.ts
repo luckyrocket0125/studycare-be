@@ -47,3 +47,24 @@ export interface PodWithMembers extends StudyPod {
   };
 }
 
+export interface PodInvitation {
+  id: string;
+  pod_id: string;
+  invited_by: string;
+  invited_user_id: string;
+  status: 'pending' | 'accepted' | 'declined';
+  created_at: string;
+  updated_at: string;
+  pod?: StudyPod;
+  inviter?: {
+    id: string;
+    email: string;
+    full_name?: string;
+  };
+  invited_user?: {
+    id: string;
+    email: string;
+    full_name?: string;
+  };
+}
+

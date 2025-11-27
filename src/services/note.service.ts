@@ -11,6 +11,20 @@ export class NoteService {
   }
 
   async createNote(userId: string, data: CreateNoteDto): Promise<Note> {
+    // If class_id is provided, verify the student is enrolled in that class
+    if (data.class_id) {
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('class_students')
+        .select('id')
+        .eq('class_id', data.class_id)
+        .eq('student_id', userId)
+        .single();
+
+      if (enrollmentError || !enrollment) {
+        throw createError('You are not enrolled in this class', 403);
+      }
+    }
+
     const { data: note, error } = await supabase
       .from('notes')
       .insert({
@@ -18,35 +32,82 @@ export class NoteService {
         title: data.title,
         content: data.content,
         tags: data.tags || [],
+        class_id: data.class_id || null,
       })
-      .select()
+      .select(`
+        *,
+        class:classes!class_id (
+          id,
+          name,
+          class_code,
+          subject
+        )
+      `)
       .single();
 
     if (error || !note) {
       throw createError('Failed to create note', 500);
     }
 
-    return note;
+    return {
+      ...note,
+      class: note.class ? {
+        id: note.class.id,
+        name: note.class.name,
+        class_code: note.class.class_code,
+        subject: note.class.subject,
+      } : undefined,
+    };
   }
 
-  async getNotes(userId: string): Promise<Note[]> {
-    const { data: notes, error } = await supabase
+  async getNotes(userId: string, classId?: string): Promise<Note[]> {
+    let query = supabase
       .from('notes')
-      .select('*')
+      .select(`
+        *,
+        class:classes!class_id (
+          id,
+          name,
+          class_code,
+          subject
+        )
+      `)
       .eq('user_id', userId)
       .order('updated_at', { ascending: false });
+
+    if (classId) {
+      query = query.eq('class_id', classId);
+    }
+
+    const { data: notes, error } = await query;
 
     if (error) {
       throw createError('Failed to fetch notes', 500);
     }
 
-    return notes || [];
+    return (notes || []).map((note: any) => ({
+      ...note,
+      class: note.class ? {
+        id: note.class.id,
+        name: note.class.name,
+        class_code: note.class.class_code,
+        subject: note.class.subject,
+      } : undefined,
+    }));
   }
 
   async getNote(noteId: string, userId: string): Promise<Note> {
     const { data: note, error } = await supabase
       .from('notes')
-      .select('*')
+      .select(`
+        *,
+        class:classes!class_id (
+          id,
+          name,
+          class_code,
+          subject
+        )
+      `)
       .eq('id', noteId)
       .eq('user_id', userId)
       .single();
@@ -55,10 +116,32 @@ export class NoteService {
       throw createError('Note not found', 404);
     }
 
-    return note;
+    return {
+      ...note,
+      class: note.class ? {
+        id: note.class.id,
+        name: note.class.name,
+        class_code: note.class.class_code,
+        subject: note.class.subject,
+      } : undefined,
+    };
   }
 
   async updateNote(noteId: string, userId: string, data: UpdateNoteDto): Promise<Note> {
+    // If class_id is being updated, verify the student is enrolled in that class
+    if (data.class_id !== undefined && data.class_id !== null) {
+      const { data: enrollment, error: enrollmentError } = await supabase
+        .from('class_students')
+        .select('id')
+        .eq('class_id', data.class_id)
+        .eq('student_id', userId)
+        .single();
+
+      if (enrollmentError || !enrollment) {
+        throw createError('You are not enrolled in this class', 403);
+      }
+    }
+
     const updateData: any = {
       updated_at: new Date().toISOString(),
     };
@@ -66,20 +149,37 @@ export class NoteService {
     if (data.title !== undefined) updateData.title = data.title;
     if (data.content !== undefined) updateData.content = data.content;
     if (data.tags !== undefined) updateData.tags = data.tags;
+    if (data.class_id !== undefined) updateData.class_id = data.class_id || null;
 
     const { data: note, error } = await supabase
       .from('notes')
       .update(updateData)
       .eq('id', noteId)
       .eq('user_id', userId)
-      .select()
+      .select(`
+        *,
+        class:classes!class_id (
+          id,
+          name,
+          class_code,
+          subject
+        )
+      `)
       .single();
 
     if (error || !note) {
       throw createError('Failed to update note', 500);
     }
 
-    return note;
+    return {
+      ...note,
+      class: note.class ? {
+        id: note.class.id,
+        name: note.class.name,
+        class_code: note.class.class_code,
+        subject: note.class.subject,
+      } : undefined,
+    };
   }
 
   async deleteNote(noteId: string, userId: string): Promise<void> {

@@ -30,7 +30,8 @@ router.post('/', async (req: AuthRequest, res, next) => {
 
 router.get('/', async (req: AuthRequest, res, next) => {
   try {
-    const notes = await noteService.getNotes(req.user!.id);
+    const classId = req.query.class_id as string | undefined;
+    const notes = await noteService.getNotes(req.user!.id, classId);
     res.json({
       success: true,
       data: notes,

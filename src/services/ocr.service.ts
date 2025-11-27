@@ -51,15 +51,31 @@ export class OCRService {
       throw createError('Failed to create image session', 500);
     }
 
-    const prompt = `Analyze this image carefully. 
-    
-1. First, extract ALL visible text, equations, numbers, and symbols. If it's handwritten, do your best to read it.
-2. Then, provide a clear, step-by-step explanation of what you see.
-3. If this appears to be a math problem, solve it step by step showing your work.
-4. If it's a diagram, chart, or graph, explain what it represents and the key information it conveys.
-5. If it's text content, summarize the main points clearly.
+    const prompt = `Analyze this image carefully and provide a clear, well-structured explanation.
 
-Be thorough and educational in your explanation.`;
+**INSTRUCTIONS:**
+1. Extract ALL visible text, equations, numbers, and symbols (including handwritten text if present).
+2. Provide a structured explanation with clear sections.
+3. Use proper formatting with headings, bullet points, and numbered steps when appropriate.
+
+**RESPONSE FORMAT:**
+
+**Extracted Text:**
+[List all text, equations, numbers, and symbols found in the image]
+
+**Analysis:**
+[Provide a clear explanation of what the image contains]
+
+**Details:**
+- If it's a math problem: Solve it step-by-step, showing each step clearly.
+- If it's a diagram/chart/graph: Explain what it represents, label key components, and describe the relationships shown.
+- If it's text content: Summarize the main points in an organized manner with clear sections.
+- If it's a diagram or visual: Describe the structure, elements, and their relationships.
+
+**Key Points:**
+[List 3-5 key takeaways or important information]
+
+Use clear, concise language. Organize information logically. Use proper spacing and formatting for readability.`;
 
     const analysis = await this.openai.analyzeImage(imageUrl, prompt);
 

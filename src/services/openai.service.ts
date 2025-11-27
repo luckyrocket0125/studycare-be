@@ -23,11 +23,16 @@ export class OpenAIService {
       const response = await openai.chat.completions.create({
         model: 'gpt-4o',
         messages: allMessages,
-        temperature: 0.7,
+        temperature: 0.6,
         max_tokens: 2000,
       });
 
-      return response.choices[0]?.message?.content || 'No response generated';
+      let content = response.choices[0]?.message?.content || 'No response generated';
+      
+      // Clean up the response for better formatting
+      content = this.cleanResponse(content);
+      
+      return content;
     } catch (error: any) {
       throw new Error(`OpenAI API error: ${error.message}`);
     }
@@ -102,28 +107,43 @@ export class OpenAIService {
   }
 
   private buildSystemPrompt(options?: ChatOptions): string {
-    let prompt = 'You are StudyCare AI, an intelligent and friendly study assistant designed to help students learn effectively.';
+    let prompt = `You are StudyCare AI, an intelligent and friendly study assistant designed to help students learn effectively.
+
+**RESPONSE GUIDELINES:**
+1. Keep responses clear, concise, and well-organized
+2. Use proper formatting with paragraphs and line breaks for readability
+3. Structure your answers logically
+4. Be direct and avoid unnecessary repetition
+5. Use bullet points or numbered lists when explaining multiple concepts
+6. Maintain a consistent, professional tone
+
+**FORMATTING RULES:**
+- Use clear paragraphs (separate ideas with blank lines)
+- Use bullet points (•) or numbered lists for step-by-step instructions
+- Use **bold** for important terms or key concepts
+- Keep sentences concise and easy to understand
+- Avoid long, run-on sentences`;
 
     if (options?.subject) {
-      prompt += ` You are currently helping with ${options.subject}.`;
+      prompt += `\n\n**CURRENT SUBJECT:** ${options.subject}`;
     }
 
     if (options?.stepByStep) {
       prompt +=
-        ' Always provide clear, step-by-step explanations. Break down complex concepts into manageable parts.';
+        '\n\n**EXPLANATION STYLE:** Always provide clear, step-by-step explanations. Break down complex concepts into manageable parts. Number each step clearly.';
     }
 
     if (options?.simplifiedMode) {
       prompt +=
-        ' Use simple language suitable for younger students. Explain concepts in an easy-to-understand way.';
+        '\n\n**LANGUAGE LEVEL:** Use simple language suitable for younger students. Explain concepts in an easy-to-understand way. Avoid technical jargon.';
     }
 
     if (options?.language && options.language !== 'en') {
-      prompt += ` Respond in ${this.getLanguageName(options.language)}.`;
+      prompt += `\n\n**LANGUAGE:** Respond in ${this.getLanguageName(options.language)}.`;
     }
 
     prompt +=
-      ' Be encouraging, patient, and focus on helping the student understand, not just providing answers.';
+      '\n\n**TONE:** Be encouraging, patient, and supportive. Focus on helping the student understand, not just providing answers.';
 
     return prompt;
   }
@@ -148,6 +168,25 @@ export class OpenAIService {
     };
 
     return languages[code] || code;
+  }
+
+  private cleanResponse(response: string): string {
+    // Remove excessive whitespace
+    let cleaned = response.trim();
+    
+    // Ensure proper paragraph spacing (max 2 newlines)
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n');
+    
+    // Remove leading/trailing whitespace from each line
+    cleaned = cleaned.split('\n').map(line => line.trim()).join('\n');
+    
+    // Ensure consistent spacing around bullet points
+    cleaned = cleaned.replace(/\n\s*[•\-\*]\s*/g, '\n• ');
+    
+    // Ensure consistent spacing around numbered lists
+    cleaned = cleaned.replace(/\n\s*(\d+)\.\s*/g, '\n$1. ');
+    
+    return cleaned.trim();
   }
 }
 

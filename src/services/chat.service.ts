@@ -123,17 +123,11 @@ export class ChatService {
   }
 
   async getSession(sessionId: string, userId: string, userRole?: string): Promise<StudySession> {
-    let query = supabase
+    const query = supabase
       .from('study_sessions')
       .select('*')
-      .eq('id', sessionId);
-
-    // For students, allow access to any session. For other roles, only their own
-    // Normalize role to lowercase for comparison
-    const normalizedRole = userRole?.toLowerCase();
-    if (normalizedRole !== 'student') {
-      query = query.eq('user_id', userId);
-    }
+      .eq('id', sessionId)
+      .eq('user_id', userId);
 
     const { data: session, error } = await query.single();
 
@@ -145,7 +139,7 @@ export class ChatService {
   }
 
   async getSessions(userId: string, userRole?: string): Promise<any[]> {
-    let query = supabase
+    const query = supabase
       .from('study_sessions')
       .select(`
         *,
@@ -156,14 +150,8 @@ export class ChatService {
         )
       `)
       .eq('session_type', 'chat')
+      .eq('user_id', userId)
       .order('created_at', { ascending: false });
-
-    // For students, return all sessions. For other roles, return only their own
-    // Normalize role to lowercase for comparison
-    const normalizedRole = userRole?.toLowerCase();
-    if (normalizedRole !== 'student') {
-      query = query.eq('user_id', userId);
-    }
 
     const { data: sessions, error } = await query;
 
