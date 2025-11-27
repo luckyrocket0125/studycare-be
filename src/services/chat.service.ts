@@ -129,7 +129,9 @@ export class ChatService {
       .eq('id', sessionId);
 
     // For students, allow access to any session. For other roles, only their own
-    if (userRole !== 'student') {
+    // Normalize role to lowercase for comparison
+    const normalizedRole = userRole?.toLowerCase();
+    if (normalizedRole !== 'student') {
       query = query.eq('user_id', userId);
     }
 
@@ -157,7 +159,9 @@ export class ChatService {
       .order('created_at', { ascending: false });
 
     // For students, return all sessions. For other roles, return only their own
-    if (userRole !== 'student') {
+    // Normalize role to lowercase for comparison
+    const normalizedRole = userRole?.toLowerCase();
+    if (normalizedRole !== 'student') {
       query = query.eq('user_id', userId);
     }
 
