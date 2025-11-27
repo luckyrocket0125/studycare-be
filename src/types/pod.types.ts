@@ -39,5 +39,11 @@ export interface CreatePodDto {
 export interface PodWithMembers extends StudyPod {
   members?: PodMember[];
   memberCount?: number;
+  isMember?: boolean;
+  creator?: {
+    id: string;
+    email: string;
+    full_name?: string;
+  };
 }
 

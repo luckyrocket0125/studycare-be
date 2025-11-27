@@ -30,7 +30,7 @@ router.post('/', async (req: AuthRequest, res, next) => {
 
 router.get('/', async (req: AuthRequest, res, next) => {
   try {
-    const pods = await podService.getPods(req.user!.id);
+    const pods = await podService.getPods(req.user!.id, req.user!.role);
     res.json({
       success: true,
       data: pods,
@@ -42,7 +42,7 @@ router.get('/', async (req: AuthRequest, res, next) => {
 
 router.get('/:id', async (req: AuthRequest, res, next) => {
   try {
-    const pod = await podService.getPod(req.params.id, req.user!.id);
+    const pod = await podService.getPod(req.params.id, req.user!.id, req.user!.role);
     res.json({
       success: true,
       data: pod,
@@ -86,7 +86,7 @@ router.post('/:id/messages', async (req: AuthRequest, res, next) => {
       });
     }
 
-    const message = await podService.sendMessage(req.params.id, req.user!.id, content);
+    const message = await podService.sendMessage(req.params.id, req.user!.id, content, req.user!.role);
     res.json({
       success: true,
       data: message,
@@ -99,7 +99,7 @@ router.post('/:id/messages', async (req: AuthRequest, res, next) => {
 router.get('/:id/messages', async (req: AuthRequest, res, next) => {
   try {
     const limit = parseInt(req.query.limit as string) || 50;
-    const messages = await podService.getMessages(req.params.id, limit);
+    const messages = await podService.getMessages(req.params.id, limit, req.user!.id, req.user!.role);
     res.json({
       success: true,
       data: messages,

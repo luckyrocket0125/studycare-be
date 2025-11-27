@@ -4,15 +4,47 @@ import { CaregiverChild, LinkChildDto, ChildActivity } from '../types/caregiver.
 
 export class CaregiverService {
   async linkChild(caregiverId: string, data: LinkChildDto): Promise<CaregiverChild> {
-    const { data: child, error: childError } = await supabase
+    const normalizedEmail = data.childEmail.trim().toLowerCase();
+    
+    const { data: allStudents, error: studentsError } = await supabase
       .from('users')
       .select('id, email, full_name, role, simplified_mode')
-      .eq('email', data.childEmail)
-      .eq('role', 'student')
-      .single();
+      .eq('role', 'student');
 
-    if (childError || !child) {
-      throw createError('Child account not found. Make sure the email is correct and the account is a student.', 404);
+    if (studentsError) {
+      console.error('Error fetching students:', studentsError);
+      throw createError('Failed to search for child account', 500);
+    }
+
+    let child = allStudents?.find(u => u.email?.toLowerCase() === normalizedEmail);
+
+    if (!child) {
+      const { data: { users: authUsers } } = await supabase.auth.admin.listUsers();
+      const authUser = authUsers?.find(u => u.email?.toLowerCase() === normalizedEmail);
+      
+      if (authUser) {
+        const { data: userProfile, error: profileError } = await supabase
+          .from('users')
+          .select('id, email, full_name, role, simplified_mode')
+          .eq('id', authUser.id)
+          .single();
+
+        if (profileError || !userProfile) {
+          throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
+        }
+
+        if (userProfile.role !== 'student') {
+          throw createError(`Account found but is registered as ${userProfile.role}, not student.`, 400);
+        }
+
+        child = userProfile;
+      } else {
+        const availableEmails = allStudents?.slice(0, 5).map(u => u.email).join(', ') || 'none';
+        throw createError(
+          `Child account not found. Make sure the email "${data.childEmail}" is correct and the account is registered as a student.`,
+          404
+        );
+      }
     }
 
     const { data: existing, error: existingError } = await supabase

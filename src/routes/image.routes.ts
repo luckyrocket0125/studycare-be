@@ -56,5 +56,54 @@ router.get('/:sessionId', authMiddleware, async (req: AuthRequest, res, next) =>
   }
 });
 
+router.get('/', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const images = await ocrService.getAllImageAnalyses(req.user!.id);
+    res.json({
+      success: true,
+      data: images,
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+router.post('/:sessionId/question', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    const { question } = req.body;
+
+    if (!question || !question.trim()) {
+      return res.status(400).json({
+        error: { message: 'Question is required' },
+      });
+    }
+
+    const answer = await ocrService.askQuestionAboutImage(
+      req.params.sessionId,
+      req.user!.id,
+      question
+    );
+
+    res.json({
+      success: true,
+      data: { answer },
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+router.delete('/:imageId', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    await ocrService.deleteImageAnalysis(req.params.imageId, req.user!.id);
+    res.json({
+      success: true,
+      message: 'Image analysis deleted successfully',
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
 export default router;
 

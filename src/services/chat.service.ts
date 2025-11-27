@@ -31,11 +31,12 @@ export class ChatService {
   async sendMessage(
     sessionId: string,
     userId: string,
-    messageData: SendMessageDto
-  ): Promise<{ response: string; message: ChatMessage }> {
+    messageData: SendMessageDto,
+    userRole?: string
+  ): Promise<{ response: string; message: ChatMessage; userMessage?: any }> {
     const { message, language } = messageData;
 
-    const session = await this.getSession(sessionId, userId);
+    const session = await this.getSession(sessionId, userId, userRole);
     const history = await this.getMessageHistory(sessionId, 10);
 
     const subject = session.subject || (await this.detectSubject(message));
@@ -57,7 +58,14 @@ export class ChatService {
         message_type: 'user',
         content: message,
       })
-      .select()
+      .select(`
+        *,
+        user:users!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .single();
 
     if (msgError || !userMessage) {
@@ -93,7 +101,14 @@ export class ChatService {
         content: aiResponse,
         metadata: { subject, language: userLanguage },
       })
-      .select()
+      .select(`
+        *,
+        user:users!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .single();
 
     if (assistantError || !assistantMessage) {
@@ -103,16 +118,22 @@ export class ChatService {
     return {
       response: aiResponse,
       message: assistantMessage,
+      userMessage: userMessage,
     };
   }
 
-  async getSession(sessionId: string, userId: string): Promise<StudySession> {
-    const { data: session, error } = await supabase
+  async getSession(sessionId: string, userId: string, userRole?: string): Promise<StudySession> {
+    let query = supabase
       .from('study_sessions')
       .select('*')
-      .eq('id', sessionId)
-      .eq('user_id', userId)
-      .single();
+      .eq('id', sessionId);
+
+    // For students, allow access to any session. For other roles, only their own
+    if (userRole !== 'student') {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data: session, error } = await query.single();
 
     if (error || !session) {
       throw createError('Session not found', 404);
@@ -121,13 +142,26 @@ export class ChatService {
     return session;
   }
 
-  async getSessions(userId: string): Promise<StudySession[]> {
-    const { data: sessions, error } = await supabase
+  async getSessions(userId: string, userRole?: string): Promise<any[]> {
+    let query = supabase
       .from('study_sessions')
-      .select('*')
-      .eq('user_id', userId)
+      .select(`
+        *,
+        user:users!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .eq('session_type', 'chat')
       .order('created_at', { ascending: false });
+
+    // For students, return all sessions. For other roles, return only their own
+    if (userRole !== 'student') {
+      query = query.eq('user_id', userId);
+    }
+
+    const { data: sessions, error } = await query;
 
     if (error) {
       throw createError('Failed to fetch sessions', 500);
@@ -136,10 +170,17 @@ export class ChatService {
     return sessions || [];
   }
 
-  async getMessageHistory(sessionId: string, limit: number = 50): Promise<ChatMessage[]> {
+  async getMessageHistory(sessionId: string, limit: number = 50): Promise<any[]> {
     const { data: messages, error } = await supabase
       .from('chat_messages')
-      .select('*')
+      .select(`
+        *,
+        user:users!user_id (
+          id,
+          email,
+          full_name
+        )
+      `)
       .eq('session_id', sessionId)
       .order('created_at', { ascending: true })
       .limit(limit);
@@ -149,6 +190,34 @@ export class ChatService {
     }
 
     return messages || [];
+  }
+
+  async deleteSession(sessionId: string, userId: string): Promise<void> {
+    // Check if session exists and belongs to the user
+    const { data: session, error: sessionError } = await supabase
+      .from('study_sessions')
+      .select('user_id')
+      .eq('id', sessionId)
+      .single();
+
+    if (sessionError || !session) {
+      throw createError('Session not found', 404);
+    }
+
+    // Only allow deletion of own sessions
+    if (session.user_id !== userId) {
+      throw createError('You can only delete your own sessions', 403);
+    }
+
+    const { error: deleteError } = await supabase
+      .from('study_sessions')
+      .delete()
+      .eq('id', sessionId)
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      throw createError('Failed to delete session', 500);
+    }
   }
 
   private async detectSubject(message: string): Promise<string | null> {

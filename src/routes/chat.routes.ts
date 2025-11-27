@@ -36,7 +36,8 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res, next) => {
         sessionId: messageData.sessionId,
         message: messageData.message,
         language: messageData.language || req.user!.language_preference || 'en',
-      }
+      },
+      req.user!.role
     );
 
     res.json({
@@ -50,7 +51,7 @@ router.post('/message', authMiddleware, async (req: AuthRequest, res, next) => {
 
 router.get('/session/:id', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const session = await chatService.getSession(req.params.id, req.user!.id);
+    const session = await chatService.getSession(req.params.id, req.user!.id, req.user!.role);
     const messages = await chatService.getMessageHistory(req.params.id);
     
     res.json({
@@ -67,10 +68,22 @@ router.get('/session/:id', authMiddleware, async (req: AuthRequest, res, next) =
 
 router.get('/sessions', authMiddleware, async (req: AuthRequest, res, next) => {
   try {
-    const sessions = await chatService.getSessions(req.user!.id);
+    const sessions = await chatService.getSessions(req.user!.id, req.user!.role);
     res.json({
       success: true,
       data: sessions,
+    });
+  } catch (error: any) {
+    next(error);
+  }
+});
+
+router.delete('/session/:id', authMiddleware, async (req: AuthRequest, res, next) => {
+  try {
+    await chatService.deleteSession(req.params.id, req.user!.id);
+    res.json({
+      success: true,
+      message: 'Session deleted successfully',
     });
   } catch (error: any) {
     next(error);

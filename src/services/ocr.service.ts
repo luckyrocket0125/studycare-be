@@ -8,6 +8,18 @@ export interface ImageAnalysisResult {
   explanation: string;
   imageUrl: string;
   sessionId: string;
+  id?: string;
+  created_at?: string;
+}
+
+export interface ImageUpload {
+  id: string;
+  session_id: string;
+  user_id: string;
+  file_url: string;
+  ocr_text: string | null;
+  explanation: string | null;
+  created_at: string;
 }
 
 export class OCRService {
@@ -92,7 +104,84 @@ Be thorough and educational in your explanation.`;
       explanation: imageData.explanation || '',
       imageUrl: imageData.file_url,
       sessionId: imageData.session_id,
+      id: imageData.id,
+      created_at: imageData.created_at,
     };
+  }
+
+  async getAllImageAnalyses(userId: string): Promise<ImageUpload[]> {
+    const { data: images, error } = await supabase
+      .from('image_uploads')
+      .select('*')
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false });
+
+    if (error) {
+      throw createError('Failed to fetch image analyses', 500);
+    }
+
+    return images || [];
+  }
+
+  async askQuestionAboutImage(
+    sessionId: string,
+    userId: string,
+    question: string
+  ): Promise<string> {
+    const { data: imageData, error } = await supabase
+      .from('image_uploads')
+      .select('*')
+      .eq('session_id', sessionId)
+      .eq('user_id', userId)
+      .single();
+
+    if (error || !imageData) {
+      throw createError('Image analysis not found', 404);
+    }
+
+    const prompt = `Based on this image that was previously analyzed, answer the following question: "${question}"
+
+Previous analysis context:
+${imageData.explanation || 'No previous analysis available'}
+
+Provide a clear, helpful answer to the question. If the question is about something not visible in the image, let the user know.`;
+
+    const answer = await this.openai.analyzeImage(imageData.file_url, prompt);
+
+    return answer;
+  }
+
+  async deleteImageAnalysis(imageId: string, userId: string): Promise<void> {
+    const { data: imageData, error: fetchError } = await supabase
+      .from('image_uploads')
+      .select('session_id, user_id')
+      .eq('id', imageId)
+      .eq('user_id', userId)
+      .single();
+
+    if (fetchError || !imageData) {
+      throw createError('Image analysis not found or access denied', 404);
+    }
+
+    const { error: deleteError } = await supabase
+      .from('image_uploads')
+      .delete()
+      .eq('id', imageId)
+      .eq('user_id', userId);
+
+    if (deleteError) {
+      throw createError('Failed to delete image analysis', 500);
+    }
+
+    const { error: sessionDeleteError } = await supabase
+      .from('study_sessions')
+      .delete()
+      .eq('id', imageData.session_id)
+      .eq('user_id', userId);
+
+    if (sessionDeleteError) {
+      console.error('Failed to delete associated session:', sessionDeleteError);
+    }
   }
 }
 

@@ -21,7 +21,10 @@ export class PodService {
       .single();
 
     if (podError || !pod) {
-      throw createError('Failed to create pod', 500);
+      throw createError(
+        `Failed to create pod: ${podError?.message || 'Unknown error'}`,
+        500
+      );
     }
 
     const { error: memberError } = await supabase
@@ -42,25 +45,42 @@ export class PodService {
     };
   }
 
-  async getPods(userId: string): Promise<PodWithMembers[]> {
-    const { data: memberships, error: membersError } = await supabase
-      .from('study_pod_members')
-      .select(`
-        pod_id,
-        study_pods (
-          id,
-          name,
-          created_by,
-          created_at
-        )
-      `)
-      .eq('user_id', userId);
+  async getPods(userId: string, userRole?: string): Promise<PodWithMembers[]> {
+    let pods: StudyPod[] = [];
 
-    if (membersError) {
-      throw createError('Failed to fetch pods', 500);
+    if (userRole === 'student') {
+      // For students, return all pods
+      const { data: allPods, error: podsError } = await supabase
+        .from('study_pods')
+        .select('id, name, created_by, created_at')
+        .order('created_at', { ascending: false });
+
+      if (podsError) {
+        throw createError('Failed to fetch pods', 500);
+      }
+
+      pods = allPods || [];
+    } else {
+      // For other roles, return only pods they're members of
+      const { data: memberships, error: membersError } = await supabase
+        .from('study_pod_members')
+        .select(`
+          pod_id,
+          study_pods (
+            id,
+            name,
+            created_by,
+            created_at
+          )
+        `)
+        .eq('user_id', userId);
+
+      if (membersError) {
+        throw createError('Failed to fetch pods', 500);
+      }
+
+      pods = (memberships || []).map((m: any) => m.study_pods).filter(Boolean);
     }
-
-    const pods = (memberships || []).map((m: any) => m.study_pods).filter(Boolean);
 
     const podsWithCounts = await Promise.all(
       pods.map(async (pod: StudyPod) => {
@@ -69,9 +89,30 @@ export class PodService {
           .select('*', { count: 'exact', head: true })
           .eq('pod_id', pod.id);
 
+        // Check if user is a member
+        const { data: membership } = await supabase
+          .from('study_pod_members')
+          .select('id')
+          .eq('pod_id', pod.id)
+          .eq('user_id', userId)
+          .single();
+
+        // Get creator info
+        const { data: creator } = await supabase
+          .from('users')
+          .select('id, email, full_name')
+          .eq('id', pod.created_by)
+          .single();
+
         return {
           ...pod,
           memberCount: count || 0,
+          isMember: !!membership,
+          creator: creator ? {
+            id: creator.id,
+            email: creator.email,
+            full_name: creator.full_name,
+          } : undefined,
         };
       })
     );
@@ -79,29 +120,31 @@ export class PodService {
     return podsWithCounts;
   }
 
-  async getPod(podId: string, userId: string): Promise<PodWithMembers> {
-    const { data: membership, error: membershipError } = await supabase
-      .from('study_pod_members')
-      .select(`
-        pod_id,
-        study_pods (
-          id,
-          name,
-          created_by,
-          created_at
-        )
-      `)
-      .eq('pod_id', podId)
-      .eq('user_id', userId)
+  async getPod(podId: string, userId: string, userRole?: string): Promise<PodWithMembers> {
+    // Check if pod exists
+    const { data: pod, error: podError } = await supabase
+      .from('study_pods')
+      .select('id, name, created_by, created_at')
+      .eq('id', podId)
       .single();
 
-    if (membershipError || !membership) {
-      throw createError('Pod not found or access denied', 404);
+    if (podError || !pod) {
+      throw createError('Pod not found', 404);
     }
 
-    const pod = Array.isArray(membership.study_pods) 
-      ? membership.study_pods[0] 
-      : membership.study_pods as StudyPod;
+    // For students, allow access to any pod. For other roles, check membership
+    if (userRole !== 'student') {
+      const { data: membership, error: membershipError } = await supabase
+        .from('study_pod_members')
+        .select('id')
+        .eq('pod_id', podId)
+        .eq('user_id', userId)
+        .single();
+
+      if (membershipError || !membership) {
+        throw createError('Pod not found or access denied', 404);
+      }
+    }
 
     const { data: members, error: membersError } = await supabase
       .from('study_pod_members')
@@ -119,6 +162,21 @@ export class PodService {
       throw createError('Failed to fetch pod members', 500);
     }
 
+    // Check if user is a member
+    const { data: userMembership } = await supabase
+      .from('study_pod_members')
+      .select('id')
+      .eq('pod_id', podId)
+      .eq('user_id', userId)
+      .single();
+
+    // Get creator info
+    const { data: creator } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .eq('id', pod.created_by)
+      .single();
+
     return {
       ...pod,
       members: (members || []).map((m: any) => ({
@@ -134,6 +192,12 @@ export class PodService {
         } : undefined,
       })),
       memberCount: members?.length || 0,
+      isMember: !!userMembership,
+      creator: creator ? {
+        id: creator.id,
+        email: creator.email,
+        full_name: creator.full_name,
+      } : undefined,
     };
   }
 
@@ -211,7 +275,8 @@ export class PodService {
     }
   }
 
-  async sendMessage(podId: string, userId: string, content: string): Promise<PodMessage> {
+  async sendMessage(podId: string, userId: string, content: string, userRole?: string): Promise<PodMessage> {
+    // Check if user is a member
     const { data: membership, error: membershipError } = await supabase
       .from('study_pod_members')
       .select('id')
@@ -219,8 +284,14 @@ export class PodService {
       .eq('user_id', userId)
       .single();
 
+    // For students, auto-join if not a member. For other roles, require membership
     if (membershipError || !membership) {
-      throw createError('Not a member of this pod', 403);
+      if (userRole === 'student') {
+        // Auto-join for students
+        await this.joinPod(podId, userId);
+      } else {
+        throw createError('Not a member of this pod', 403);
+      }
     }
 
     const { data: message, error: messageError } = await supabase
@@ -271,7 +342,20 @@ Provide helpful guidance, clarification, or study tips related to this discussio
     }
   }
 
-  async getMessages(podId: string, limit: number = 50): Promise<PodMessage[]> {
+  async getMessages(podId: string, limit: number = 50, userId?: string, userRole?: string): Promise<PodMessage[]> {
+    // For students, allow viewing messages from any pod. For other roles, check membership
+    if (userRole !== 'student' && userId) {
+      const { data: membership, error: membershipError } = await supabase
+        .from('study_pod_members')
+        .select('id')
+        .eq('pod_id', podId)
+        .eq('user_id', userId)
+        .single();
+
+      if (membershipError || !membership) {
+        throw createError('Not a member of this pod', 403);
+      }
+    }
     const { data: messages, error } = await supabase
       .from('pod_messages')
       .select(`
