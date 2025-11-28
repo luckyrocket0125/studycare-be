@@ -23,14 +23,62 @@ export class CaregiverService {
       const authUser = authUsers?.find(u => u.email?.toLowerCase() === normalizedEmail);
       
       if (authUser) {
-        const { data: userProfile, error: profileError } = await supabase
+        let userProfile = null;
+        let profileError = null;
+
+        // Try to get existing profile
+        const { data: existingProfile, error: existingError } = await supabase
           .from('users')
           .select('id, email, full_name, role, simplified_mode')
           .eq('id', authUser.id)
           .single();
 
-        if (profileError || !userProfile) {
-          throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
+        if (existingError || !existingProfile) {
+          // Profile doesn't exist, try to create it automatically
+          try {
+            const { data: newProfile, error: createError } = await supabase
+              .from('users')
+              .insert({
+                id: authUser.id,
+                email: authUser.email || normalizedEmail,
+                full_name: authUser.user_metadata?.full_name || null,
+                role: 'student', // Assume student role for incomplete profiles
+                language_preference: 'en',
+                simplified_mode: false,
+              })
+              .select('id, email, full_name, role, simplified_mode')
+              .single();
+
+            if (createError || !newProfile) {
+              // If direct insert fails, try RPC
+              const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_profile', {
+                p_id: authUser.id,
+                p_email: authUser.email || normalizedEmail,
+                p_full_name: authUser.user_metadata?.full_name || null,
+                p_role: 'student',
+                p_language_preference: 'en',
+                p_simplified_mode: false,
+              });
+
+              if (rpcError || !rpcData) {
+                throw new Error('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.');
+              }
+
+              userProfile = {
+                id: rpcData.id,
+                email: rpcData.email,
+                full_name: rpcData.full_name,
+                role: rpcData.role,
+                simplified_mode: rpcData.simplified_mode,
+              };
+            } else {
+              userProfile = newProfile;
+            }
+          } catch (error) {
+            throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
+          }
+        } else {
+          userProfile = existingProfile;
         }
 
         if (userProfile.role !== 'student') {
