@@ -34,36 +34,40 @@ export class CaregiverService {
           .single();
 
         if (existingError || !existingProfile) {
-          // Profile doesn't exist, try to create it automatically
+          // Profile doesn't exist, try to create it automatically using RPC (bypasses RLS)
           try {
-            const { data: newProfile, error: createError } = await supabase
-              .from('users')
-              .insert({
-                id: authUser.id,
-                email: authUser.email || normalizedEmail,
-                full_name: authUser.user_metadata?.full_name || null,
-                role: 'student', // Assume student role for incomplete profiles
-                language_preference: 'en',
-                simplified_mode: false,
-              })
-              .select('id, email, full_name, role, simplified_mode')
-              .single();
+            const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_profile', {
+              p_id: authUser.id,
+              p_email: authUser.email || normalizedEmail,
+              p_full_name: authUser.user_metadata?.full_name || null,
+              p_role: 'student',
+              p_language_preference: 'en',
+              p_simplified_mode: false,
+            });
 
-            if (createError || !newProfile) {
-              // If direct insert fails, try RPC
-              const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_profile', {
-                p_id: authUser.id,
-                p_email: authUser.email || normalizedEmail,
-                p_full_name: authUser.user_metadata?.full_name || null,
-                p_role: 'student',
-                p_language_preference: 'en',
-                p_simplified_mode: false,
-              });
+            if (rpcError || !rpcData) {
+              console.error('Failed to create user profile via RPC:', rpcError);
+              // If RPC fails, try direct insert as fallback
+              const { data: newProfile, error: insertErr } = await supabase
+                .from('users')
+                .insert({
+                  id: authUser.id,
+                  email: authUser.email || normalizedEmail,
+                  full_name: authUser.user_metadata?.full_name || null,
+                  role: 'student',
+                  language_preference: 'en',
+                  simplified_mode: false,
+                })
+                .select('id, email, full_name, role, simplified_mode')
+                .single();
 
-              if (rpcError || !rpcData) {
-                throw new Error('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.');
+              if (insertErr || !newProfile) {
+                console.error('Failed to create user profile via direct insert:', insertErr);
+                throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
               }
 
+              userProfile = newProfile;
+            } else {
               userProfile = {
                 id: rpcData.id,
                 email: rpcData.email,
@@ -71,10 +75,25 @@ export class CaregiverService {
                 role: rpcData.role,
                 simplified_mode: rpcData.simplified_mode,
               };
-            } else {
-              userProfile = newProfile;
             }
-          } catch (error) {
+
+            // Re-fetch to ensure profile is available
+            if (userProfile) {
+              const { data: verifyProfile, error: verifyError } = await supabase
+                .from('users')
+                .select('id, email, full_name, role, simplified_mode')
+                .eq('id', authUser.id)
+                .single();
+
+              if (!verifyError && verifyProfile) {
+                userProfile = verifyProfile;
+              }
+            }
+          } catch (error: any) {
+            console.error('Error creating user profile:', error);
+            if (error.message && error.message.includes('Child account exists')) {
+              throw error;
+            }
             throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
           }
         } else {
