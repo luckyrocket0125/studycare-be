@@ -235,15 +235,7 @@ export class CaregiverService {
   async getLinkedChildren(caregiverId: string): Promise<CaregiverChild[]> {
     const { data: relationships, error } = await supabase
       .from('caregiver_children')
-      .select(`
-        *,
-        child:child_id (
-          id,
-          email,
-          full_name,
-          simplified_mode
-        )
-      `)
+      .select('*')
       .eq('caregiver_id', caregiverId)
       .order('created_at', { ascending: false });
 
@@ -251,18 +243,46 @@ export class CaregiverService {
       throw createError('Failed to fetch linked children', 500);
     }
 
-    return (relationships || []).map((rel: any) => ({
-      id: rel.id,
-      caregiver_id: rel.caregiver_id,
-      child_id: rel.child_id,
-      created_at: rel.created_at,
-      child: rel.child ? {
-        id: rel.child.id,
-        email: rel.child.email,
-        full_name: rel.child.full_name,
-        simplified_mode: rel.child.simplified_mode,
-      } : undefined,
-    }));
+    if (!relationships || relationships.length === 0) {
+      return [];
+    }
+
+    const childIds = relationships.map((rel: any) => rel.child_id);
+    
+    const { data: childrenData, error: childrenError } = await supabase
+      .from('users')
+      .select('id, email, full_name, simplified_mode')
+      .in('id', childIds)
+      .eq('role', 'student');
+
+    if (childrenError) {
+      console.error('Error fetching children data:', childrenError);
+    }
+
+    const childrenMap = new Map(
+      (childrenData || []).map((child: any) => [child.id, child])
+    );
+
+    return relationships.map((rel: any) => {
+      const child = childrenMap.get(rel.child_id);
+      return {
+        id: rel.id,
+        caregiver_id: rel.caregiver_id,
+        child_id: rel.child_id,
+        created_at: rel.created_at,
+        child: child ? {
+          id: child.id,
+          email: child.email,
+          full_name: child.full_name,
+          simplified_mode: child.simplified_mode,
+        } : {
+          id: rel.child_id,
+          email: null,
+          full_name: null,
+          simplified_mode: false,
+        },
+      };
+    });
   }
 
   async unlinkChild(caregiverId: string, childId: string): Promise<void> {
@@ -280,14 +300,7 @@ export class CaregiverService {
   async getChildActivity(caregiverId: string, childId: string): Promise<ChildActivity> {
     const { data: relationship, error: relationshipError } = await supabase
       .from('caregiver_children')
-      .select(`
-        id,
-        child:child_id (
-          id,
-          email,
-          full_name
-        )
-      `)
+      .select('id')
       .eq('caregiver_id', caregiverId)
       .eq('child_id', childId)
       .single();
@@ -296,10 +309,16 @@ export class CaregiverService {
       throw createError('Child not linked to this caregiver', 403);
     }
 
-    const relationshipData = relationship as any;
-    let child = relationshipData.child;
+    const { data: childData, error: childError } = await supabase
+      .from('users')
+      .select('id, email, full_name')
+      .eq('id', childId)
+      .eq('role', 'student')
+      .single();
 
-    if (!child) {
+    let child: { id: string; email: string; full_name?: string | null } | null = null;
+
+    if (childError || !childData) {
       const { data: rpcData, error: rpcError } = await supabase.rpc('get_child_info', {
         p_caregiver_id: caregiverId,
         p_child_id: childId,
@@ -314,6 +333,16 @@ export class CaregiverService {
         email: rpcData[0].email,
         full_name: rpcData[0].full_name,
       };
+    } else {
+      child = {
+        id: childData.id,
+        email: childData.email,
+        full_name: childData.full_name,
+      };
+    }
+
+    if (!child) {
+      throw createError('Child not found', 404);
     }
 
     const [classesCount, notesCount, sessionsCount, lastActive] = await Promise.all([
@@ -379,7 +408,7 @@ export class CaregiverService {
 
     return {
       child_id: child.id,
-      child_name: child.full_name,
+      child_name: child.full_name || undefined,
       child_email: child.email,
       classes_count: classesCount.count || 0,
       notes_count: notesCount.count || 0,
