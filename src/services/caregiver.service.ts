@@ -335,12 +335,41 @@ export class CaregiverService {
       });
 
       if (activityError) {
-        console.error('RPC Error fetching child activity:', activityError);
-        throw createError('Failed to fetch child activity', 500);
+        console.error('RPC Error fetching child activity:', {
+          error: activityError,
+          message: activityError.message,
+          details: activityError.details,
+          hint: activityError.hint,
+          code: activityError.code,
+          caregiverId,
+          childId,
+        });
+        
+        if (activityError.code === '42883' || activityError.message?.includes('does not exist')) {
+          throw createError(
+            'Child activity function not found. Please run database migrations.',
+            500
+          );
+        }
+        
+        throw createError(
+          `Failed to fetch child activity: ${activityError.message || 'Unknown error'}`,
+          500
+        );
       }
 
       if (!activityData || activityData.length === 0) {
-        throw createError('Child activity data not found', 404);
+        console.warn('Child activity data is empty, returning default values:', { caregiverId, childId });
+        return {
+          child_id: child.id,
+          child_name: child.full_name || undefined,
+          child_email: child.email,
+          classes_count: 0,
+          notes_count: 0,
+          chat_sessions_count: 0,
+          last_active: null,
+          recent_activity: [],
+        };
       }
 
       const activity = activityData[0];
