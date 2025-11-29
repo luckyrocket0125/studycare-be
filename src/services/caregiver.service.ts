@@ -233,56 +233,39 @@ export class CaregiverService {
   }
 
   async getLinkedChildren(caregiverId: string): Promise<CaregiverChild[]> {
-    const { data: relationships, error } = await supabase
-      .from('caregiver_children')
-      .select('*')
-      .eq('caregiver_id', caregiverId)
-      .order('created_at', { ascending: false });
+    try {
+      const { data: rpcData, error: rpcError } = await supabase.rpc('get_caregiver_children', {
+        p_caregiver_id: caregiverId,
+      });
 
-    if (error) {
+      if (rpcError) {
+        console.error('RPC Error fetching caregiver children:', rpcError);
+        throw createError('Failed to fetch linked children', 500);
+      }
+
+      if (!rpcData || rpcData.length === 0) {
+        return [];
+      }
+
+      return rpcData.map((row: any) => ({
+        id: row.relationship_id,
+        caregiver_id: row.caregiver_id,
+        child_id: row.child_id,
+        created_at: row.created_at,
+        child: {
+          id: row.child_id,
+          email: row.child_email,
+          full_name: row.child_full_name,
+          simplified_mode: row.child_simplified_mode || false,
+        },
+      }));
+    } catch (error: any) {
+      if (error.statusCode) {
+        throw error;
+      }
+      console.error('Error in getLinkedChildren:', error);
       throw createError('Failed to fetch linked children', 500);
     }
-
-    if (!relationships || relationships.length === 0) {
-      return [];
-    }
-
-    const childIds = relationships.map((rel: any) => rel.child_id);
-    
-    const { data: childrenData, error: childrenError } = await supabase
-      .from('users')
-      .select('id, email, full_name, simplified_mode')
-      .in('id', childIds)
-      .eq('role', 'student');
-
-    if (childrenError) {
-      console.error('Error fetching children data:', childrenError);
-    }
-
-    const childrenMap = new Map(
-      (childrenData || []).map((child: any) => [child.id, child])
-    );
-
-    return relationships.map((rel: any) => {
-      const child = childrenMap.get(rel.child_id);
-      return {
-        id: rel.id,
-        caregiver_id: rel.caregiver_id,
-        child_id: rel.child_id,
-        created_at: rel.created_at,
-        child: child ? {
-          id: child.id,
-          email: child.email,
-          full_name: child.full_name,
-          simplified_mode: child.simplified_mode,
-        } : {
-          id: rel.child_id,
-          email: null,
-          full_name: null,
-          simplified_mode: false,
-        },
-      };
-    });
   }
 
   async unlinkChild(caregiverId: string, childId: string): Promise<void> {
