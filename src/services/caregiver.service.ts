@@ -42,6 +42,12 @@ export class CaregiverService {
               throw createError('User email is required but not found in authentication', 400);
             }
 
+            console.log('Attempting to create user profile via RPC:', {
+              userId: authUser.id,
+              email: userEmail,
+              fullName: authUser.user_metadata?.full_name,
+            });
+
             const { data: rpcData, error: rpcError } = await supabase.rpc('create_user_profile', {
               p_id: authUser.id,
               p_email: userEmail,
@@ -49,6 +55,18 @@ export class CaregiverService {
               p_role: 'student',
               p_language_preference: 'en',
               p_simplified_mode: false,
+            });
+
+            console.log('RPC call result:', {
+              hasData: !!rpcData,
+              hasError: !!rpcError,
+              rpcData,
+              rpcError: rpcError ? {
+                message: rpcError.message,
+                details: rpcError.details,
+                hint: rpcError.hint,
+                code: rpcError.code,
+              } : null,
             });
 
             if (rpcError) {
@@ -120,15 +138,29 @@ export class CaregiverService {
                 }
               }
             } else if (rpcData) {
-              userProfile = {
-                id: rpcData.id,
-                email: rpcData.email,
-                full_name: rpcData.full_name,
-                role: rpcData.role,
-                simplified_mode: rpcData.simplified_mode,
-              };
+              const { data: verifyRpcProfile, error: verifyRpcError } = await supabase
+                .from('users')
+                .select('id, email, full_name, role, simplified_mode')
+                .eq('id', authUser.id)
+                .single();
+
+              if (!verifyRpcError && verifyRpcProfile) {
+                userProfile = verifyRpcProfile;
+              } else {
+                console.error('RPC returned data but verification failed:', {
+                  rpcData,
+                  verifyError: verifyRpcError,
+                  userId: authUser.id,
+                });
+                throw createError('Profile was created via RPC but could not be verified. Please try again.', 500);
+              }
             } else {
-              throw createError('Child account exists in authentication but profile is incomplete. The student needs to complete their registration.', 404);
+              console.error('RPC call succeeded but returned no data:', {
+                userId: authUser.id,
+                email: userEmail,
+                rpcError,
+              });
+              throw createError('Child account exists in authentication but profile creation failed. The student needs to complete their registration.', 404);
             }
 
             // Final verification - re-fetch to ensure profile is available
@@ -142,9 +174,25 @@ export class CaregiverService {
               if (!verifyError && verifyProfile) {
                 userProfile = verifyProfile;
               } else if (verifyError) {
-                console.error('Verification failed after profile creation:', verifyError);
+                console.error('Verification failed after profile creation:', {
+                  error: verifyError,
+                  message: verifyError.message,
+                  code: verifyError.code,
+                  userId: authUser.id,
+                });
+                
+                if (verifyError.code === 'PGRST116' || verifyError.message?.includes('No rows')) {
+                  throw createError('Profile creation failed. The student account may need to complete registration first.', 404);
+                }
+                
+                throw createError(`Profile was created but could not be verified: ${verifyError.message || 'Unknown error'}. Please try again.`, 500);
+              } else {
+                console.warn('Verification returned no data but no error:', { userId: authUser.id });
                 throw createError('Profile was created but could not be verified. Please try again.', 500);
               }
+            } else {
+              console.error('User profile is null after creation attempt:', { userId: authUser.id, email: userEmail });
+              throw createError('Failed to create user profile. Please ensure the student completes their registration.', 500);
             }
           } catch (error: any) {
             console.error('Error creating user profile:', error);
