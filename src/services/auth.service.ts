@@ -12,8 +12,11 @@ export class AuthService {
     });
 
     if (authError || !authData.user) {
+      console.error('Auth user creation failed:', authError);
       throw createError(authError?.message || 'Registration failed', 400);
     }
+
+    console.log('Auth user created successfully:', { userId: authData.user.id, email });
 
     let user: User | null = null;
     let userError: any = null;
@@ -32,8 +35,21 @@ export class AuthService {
         .select()
         .single();
 
-      user = userData;
-      userError = insertError;
+      if (insertError || !userData) {
+        userError = insertError;
+      } else {
+        const { data: verifiedUser, error: verifyError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (verifyError || !verifiedUser) {
+          userError = verifyError || new Error('User created but could not be verified');
+        } else {
+          user = verifiedUser;
+        }
+      }
     } catch (error) {
       userError = error;
     }
@@ -49,21 +65,48 @@ export class AuthService {
           p_simplified_mode: false,
         });
 
-        if (rpcError || !userData) {
-          throw rpcError || new Error('RPC call failed');
+        if (rpcError) {
+          throw rpcError;
         }
 
-        user = userData as User;
+        const { data: verifiedUser, error: verifyError } = await supabase
+          .from('users')
+          .select('*')
+          .eq('id', authData.user.id)
+          .single();
+
+        if (verifyError || !verifiedUser) {
+          throw new Error('User profile created but could not be verified');
+        }
+
+        user = verifiedUser;
         userError = null;
       } catch (rpcError) {
         console.error('User creation error (both methods failed):', userError, rpcError);
-        await supabase.auth.admin.deleteUser(authData.user.id);
-        throw createError(
-          userError?.message || 'Failed to create user profile. Please check database permissions.',
-          500
-        );
+        try {
+          await supabase.auth.admin.deleteUser(authData.user.id);
+        } catch (deleteError) {
+          console.error('Failed to delete auth user after registration failure:', deleteError);
+        }
+        const errorMessage = 
+          (userError as any)?.message || 
+          (rpcError as any)?.message || 
+          'Failed to create user profile. Please check database permissions.';
+        throw createError(errorMessage, 500);
       }
     }
+
+    if (!user) {
+      console.error('User record is null after all creation attempts');
+      try {
+        await supabase.auth.admin.deleteUser(authData.user.id);
+      } catch (deleteError) {
+        console.error('Failed to delete auth user after registration failure:', deleteError);
+      }
+      throw createError('Failed to create user profile', 500);
+    }
+
+    console.log('User profile created successfully:', { userId: user.id, email: user.email, role: user.role });
 
     let session = authData.session;
 
@@ -106,7 +149,7 @@ export class AuthService {
     });
 
     if (authError || !authData.session) {
-      throw createError('Invalid email or password' + authError, 401);
+      throw createError('Invalid email or password', 401);
     }
 
     const { data: user, error: userError } = await supabase

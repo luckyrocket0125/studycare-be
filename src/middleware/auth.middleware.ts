@@ -39,7 +39,12 @@ export const authMiddleware = async (
       .single();
 
     if (userError || !userData) {
-      throw createError('User not found', 404);
+      console.error('User lookup failed in authMiddleware:', {
+        userId: user.id,
+        email: user.email,
+        error: userError,
+      });
+      throw createError('User not found. Please ensure your account was created properly.', 404);
     }
 
     req.user = {
