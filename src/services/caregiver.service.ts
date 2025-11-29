@@ -328,77 +328,59 @@ export class CaregiverService {
       throw createError('Child not found', 404);
     }
 
-    const [classesCount, notesCount, sessionsCount, lastActive] = await Promise.all([
-      supabase
-        .from('class_students')
-        .select('*', { count: 'exact', head: true })
-        .eq('student_id', childId),
-      supabase
-        .from('notes')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', childId),
-      supabase
-        .from('study_sessions')
-        .select('*', { count: 'exact', head: true })
-        .eq('user_id', childId),
-      supabase
-        .from('study_sessions')
-        .select('created_at')
-        .eq('user_id', childId)
-        .order('created_at', { ascending: false })
-        .limit(1)
-        .single(),
-    ]);
-
-    const recentNotes = await supabase
-      .from('notes')
-      .select('id, title, created_at')
-      .eq('user_id', childId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    const recentSessions = await supabase
-      .from('study_sessions')
-      .select('id, session_type, subject, created_at')
-      .eq('user_id', childId)
-      .order('created_at', { ascending: false })
-      .limit(5);
-
-    const recentActivity: ChildActivity['recent_activity'] = [];
-
-    if (recentNotes.data) {
-      recentNotes.data.forEach((note) => {
-        recentActivity.push({
-          type: 'note',
-          description: `Created note: ${note.title}`,
-          created_at: note.created_at,
-        });
+    try {
+      const { data: activityData, error: activityError } = await supabase.rpc('get_child_activity', {
+        p_caregiver_id: caregiverId,
+        p_child_id: childId,
       });
-    }
 
-    if (recentSessions.data) {
-      recentSessions.data.forEach((session) => {
-        recentActivity.push({
-          type: session.session_type as 'chat' | 'image',
-          description: `${session.session_type} session${session.subject ? ` - ${session.subject}` : ''}`,
-          created_at: session.created_at,
-        });
+      if (activityError) {
+        console.error('RPC Error fetching child activity:', activityError);
+        throw createError('Failed to fetch child activity', 500);
+      }
+
+      if (!activityData || activityData.length === 0) {
+        throw createError('Child activity data not found', 404);
+      }
+
+      const activity = activityData[0];
+
+      const { data: recentActivityData, error: recentError } = await supabase.rpc('get_recent_child_activity', {
+        p_caregiver_id: caregiverId,
+        p_child_id: childId,
+        p_limit: 10,
       });
+
+      if (recentError) {
+        console.error('RPC Error fetching recent activity:', recentError);
+      }
+
+      const recentActivity: ChildActivity['recent_activity'] = (recentActivityData || []).map((item: any) => ({
+        type: item.activity_type as 'chat' | 'note' | 'image',
+        description: item.description,
+        created_at: item.created_at,
+      }));
+
+      recentActivity.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+      recentActivity.splice(10);
+
+      return {
+        child_id: activity.child_id,
+        child_name: activity.child_full_name || undefined,
+        child_email: activity.child_email,
+        classes_count: Number(activity.classes_count) || 0,
+        notes_count: Number(activity.notes_count) || 0,
+        chat_sessions_count: Number(activity.chat_sessions_count) || 0,
+        last_active: activity.last_active || null,
+        recent_activity: recentActivity,
+      };
+    } catch (error: any) {
+      if (error.statusCode) {
+        throw error;
+      }
+      console.error('Error in getChildActivity:', error);
+      throw createError('Failed to fetch child activity', 500);
     }
-
-    recentActivity.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-    recentActivity.splice(10);
-
-    return {
-      child_id: child.id,
-      child_name: child.full_name || undefined,
-      child_email: child.email,
-      classes_count: classesCount.count || 0,
-      notes_count: notesCount.count || 0,
-      chat_sessions_count: sessionsCount.count || 0,
-      last_active: lastActive.data?.created_at || null,
-      recent_activity: recentActivity,
-    };
   }
 }
 
