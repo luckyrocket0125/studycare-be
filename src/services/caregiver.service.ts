@@ -381,8 +381,23 @@ export class CaregiverService {
       });
 
       if (recentError) {
-        console.error('RPC Error fetching recent activity:', recentError);
+        console.error('RPC Error fetching recent activity:', {
+          error: recentError,
+          message: recentError.message,
+          details: recentError.details,
+          hint: recentError.hint,
+          code: recentError.code,
+          caregiverId,
+          childId,
+        });
       }
+
+      console.log('Recent activity data:', {
+        hasData: !!recentActivityData,
+        dataLength: recentActivityData?.length || 0,
+        data: recentActivityData,
+        childId,
+      });
 
       const recentActivity: ChildActivity['recent_activity'] = (recentActivityData || []).map((item: any) => ({
         type: item.activity_type as 'chat' | 'note' | 'image',
