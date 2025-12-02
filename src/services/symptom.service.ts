@@ -24,19 +24,24 @@ You MUST:
 - Always recommend consulting healthcare professionals
 - Include clear disclaimers that this is not medical advice
 
-CRITICAL FORMATTING REQUIREMENTS:
-- Write ALL text in PLAIN TEXT ONLY
-- NO markdown formatting (no asterisks, no bullets, no bold, no italics)
-- NO bullet points or lists with symbols
-- Use simple sentences and paragraphs separated by line breaks
-- Write naturally as if speaking to a person
-- Use commas and periods for separation, not special characters
+CRITICAL FORMATTING REQUIREMENTS - YOU MUST FOLLOW THIS EXACT FORMAT:
+- Use NUMBERED LISTS ONLY (1., 2., 3., etc.)
+- NO markdown formatting (no ###, no **, no *, no -, no •, no #, no symbols)
+- NO headings or titles
+- NO bullet points
+- NO bold, italic, or any text formatting
+- Each item in the numbered list should be a complete sentence or short paragraph
+- Start each field with a numbered list
+- Example format:
+  1. First point or explanation
+  2. Second point or explanation
+  3. Third point or explanation
 
-Format your response as JSON with all text fields in plain text (no markdown):
+Format your response as JSON with all text fields using numbered lists only:
 {
-  "guidance": "General educational guidance about the symptoms written in plain text, 2-3 sentences, no markdown",
-  "educationalInfo": "Educational information about common causes and general knowledge written in plain text, 3-4 sentences, no markdown",
-  "whenToSeekHelp": "Clear guidance on when to consult a healthcare professional written in plain text, 2-3 sentences, no markdown",
+  "guidance": "1. First educational point about the symptoms\n2. Second educational point\n3. Third educational point if needed",
+  "educationalInfo": "1. First piece of educational information\n2. Second piece of educational information\n3. Third piece of educational information",
+  "whenToSeekHelp": "1. First situation when to seek help\n2. Second situation when to seek help\n3. Third situation when to seek help",
   "severityLevel": "mild" | "moderate" | "severe" | "emergency",
   "disclaimer": "This is educational information only and not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition."
 }`;
@@ -71,16 +76,48 @@ Provide safe, non-diagnostic educational guidance following the system instructi
       const guidance = JSON.parse(jsonText) as SymptomGuidance;
 
       const cleanMarkdown = (text: string): string => {
-        return text
+        if (!text) return text;
+
+        let cleaned = text
+          .replace(/#{1,6}\s+/g, '')
           .replace(/\*\*/g, '')
           .replace(/\*/g, '')
-          .replace(/^[-•]\s+/gm, '')
-          .replace(/^\d+\.\s+/gm, '')
-          .replace(/#{1,6}\s+/g, '')
           .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
           .replace(/`([^`]+)`/g, '$1')
+          .replace(/_{1,2}([^_]+)_{1,2}/g, '$1')
           .replace(/\n{3,}/g, '\n\n')
           .trim();
+
+        const lines = cleaned.split('\n');
+        const numberedLines: string[] = [];
+        let currentNumber = 1;
+
+        for (const line of lines) {
+          const trimmedLine = line.trim();
+          if (!trimmedLine) {
+            continue;
+          }
+
+          const numberedMatch = trimmedLine.match(/^(\d+)\.\s*(.+)$/);
+          if (numberedMatch) {
+            numberedLines.push(`${currentNumber}. ${numberedMatch[2].trim()}`);
+            currentNumber++;
+          } else {
+            const bulletMatch = trimmedLine.match(/^[-•]\s*(.+)$/);
+            if (bulletMatch) {
+              numberedLines.push(`${currentNumber}. ${bulletMatch[1].trim()}`);
+              currentNumber++;
+            } else if (!trimmedLine.match(/^#{1,6}\s/)) {
+              const content = trimmedLine.replace(/^[-•*]\s*/, '').trim();
+              if (content) {
+                numberedLines.push(`${currentNumber}. ${content}`);
+                currentNumber++;
+              }
+            }
+          }
+        }
+
+        return numberedLines.length > 0 ? numberedLines.join('\n') : (cleaned ? `1. ${cleaned}` : cleaned);
       };
 
       guidance.guidance = cleanMarkdown(guidance.guidance);
