@@ -37,11 +37,13 @@ CRITICAL FORMATTING REQUIREMENTS - YOU MUST FOLLOW THIS EXACT FORMAT:
   2. Second point or explanation
   3. Third point or explanation
 
-Format your response as JSON with all text fields using numbered lists only:
+IMPORTANT: Format your response as valid JSON. In JSON strings, newlines must be escaped as \\n (backslash followed by n). Do NOT use actual line breaks in JSON string values.
+
+Format your response as JSON with all text fields using numbered lists only (use \\n for line breaks):
 {
-  "guidance": "1. First educational point about the symptoms\n2. Second educational point\n3. Third educational point if needed",
-  "educationalInfo": "1. First piece of educational information\n2. Second piece of educational information\n3. Third piece of educational information",
-  "whenToSeekHelp": "1. First situation when to seek help\n2. Second situation when to seek help\n3. Third situation when to seek help",
+  "guidance": "1. First educational point about the symptoms\\n2. Second educational point\\n3. Third educational point if needed",
+  "educationalInfo": "1. First piece of educational information\\n2. Second piece of educational information\\n3. Third piece of educational information",
+  "whenToSeekHelp": "1. First situation when to seek help\\n2. Second situation when to seek help\\n3. Third situation when to seek help",
   "severityLevel": "mild" | "moderate" | "severe" | "emergency",
   "disclaimer": "This is educational information only and not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition."
 }`;
@@ -73,7 +75,38 @@ Provide safe, non-diagnostic educational guidance following the system instructi
         jsonText = jsonText.replace(/^```\n?/, '').replace(/\n?```$/, '');
       }
 
-      const guidance = JSON.parse(jsonText) as SymptomGuidance;
+      jsonText = jsonText.trim();
+
+      const fixJsonControlCharacters = (json: string): string => {
+        return json.replace(/"([^"]+)":\s*"([^"]*)"/g, (match, key, value) => {
+          const escapedValue = value
+            .replace(/\\/g, '\\\\')
+            .replace(/"/g, '\\"')
+            .replace(/\n/g, '\\n')
+            .replace(/\r/g, '\\r')
+            .replace(/\t/g, '\\t')
+            .replace(/[\u0000-\u001F]/g, '');
+          return `"${key}": "${escapedValue}"`;
+        });
+      };
+
+      let guidance: SymptomGuidance;
+      try {
+        guidance = JSON.parse(jsonText) as SymptomGuidance;
+      } catch (parseError: any) {
+        console.error('JSON parse error, attempting to fix control characters:', {
+          error: parseError.message,
+          jsonPreview: jsonText.substring(0, 300),
+        });
+
+        try {
+          const fixedJson = fixJsonControlCharacters(jsonText);
+          guidance = JSON.parse(fixedJson) as SymptomGuidance;
+        } catch (secondError: any) {
+          console.error('Second parse attempt failed:', secondError);
+          throw createError(`Failed to parse AI response: ${parseError.message}. The AI may have returned invalid JSON. Please try again.`, 500);
+        }
+      }
 
       const cleanMarkdown = (text: string): string => {
         if (!text) return text;
