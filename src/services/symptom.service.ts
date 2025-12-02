@@ -24,11 +24,19 @@ You MUST:
 - Always recommend consulting healthcare professionals
 - Include clear disclaimers that this is not medical advice
 
-Format your response as JSON:
+CRITICAL FORMATTING REQUIREMENTS:
+- Write ALL text in PLAIN TEXT ONLY
+- NO markdown formatting (no asterisks, no bullets, no bold, no italics)
+- NO bullet points or lists with symbols
+- Use simple sentences and paragraphs separated by line breaks
+- Write naturally as if speaking to a person
+- Use commas and periods for separation, not special characters
+
+Format your response as JSON with all text fields in plain text (no markdown):
 {
-  "guidance": "General educational guidance about the symptoms (2-3 sentences)",
-  "educationalInfo": "Educational information about common causes and general knowledge (3-4 sentences)",
-  "whenToSeekHelp": "Clear guidance on when to consult a healthcare professional (2-3 sentences)",
+  "guidance": "General educational guidance about the symptoms written in plain text, 2-3 sentences, no markdown",
+  "educationalInfo": "Educational information about common causes and general knowledge written in plain text, 3-4 sentences, no markdown",
+  "whenToSeekHelp": "Clear guidance on when to consult a healthcare professional written in plain text, 2-3 sentences, no markdown",
   "severityLevel": "mild" | "moderate" | "severe" | "emergency",
   "disclaimer": "This is educational information only and not a substitute for professional medical advice, diagnosis, or treatment. Always seek the advice of your physician or other qualified health provider with any questions you may have regarding a medical condition."
 }`;
@@ -61,6 +69,24 @@ Provide safe, non-diagnostic educational guidance following the system instructi
       }
 
       const guidance = JSON.parse(jsonText) as SymptomGuidance;
+
+      const cleanMarkdown = (text: string): string => {
+        return text
+          .replace(/\*\*/g, '')
+          .replace(/\*/g, '')
+          .replace(/^[-•]\s+/gm, '')
+          .replace(/^\d+\.\s+/gm, '')
+          .replace(/#{1,6}\s+/g, '')
+          .replace(/\[([^\]]+)\]\([^\)]+\)/g, '$1')
+          .replace(/`([^`]+)`/g, '$1')
+          .replace(/\n{3,}/g, '\n\n')
+          .trim();
+      };
+
+      guidance.guidance = cleanMarkdown(guidance.guidance);
+      guidance.educationalInfo = cleanMarkdown(guidance.educationalInfo);
+      guidance.whenToSeekHelp = cleanMarkdown(guidance.whenToSeekHelp);
+      guidance.disclaimer = cleanMarkdown(guidance.disclaimer);
 
       const { data: session, error: sessionError } = await supabase
         .from('study_sessions')
